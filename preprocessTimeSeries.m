@@ -1,4 +1,4 @@
-function [save_fn] = preprocessTimeSeries(filelist,template,register_flag,nonrigid_flag,movie_flag)
+function [save_fn] = preprocessTimeSeries(filelist,template)
 % Modified version of A_ProcessTimeSeries, see original description below:
 % Written 13Sep2021 KS
 %
@@ -37,10 +37,6 @@ if nargin==0
     filelist = uigetfile('.tif','MultiSelect','on');
     nonrigid_flag = 'No';
     register_flag = questdlg('Perform X-Y registration (movement correction)?','Dialog box','Yes','No','Yes');
-    if iscell(filelist)
-        nonrigid_flag = questdlg('Perform Nonrigid Registration (for aligning seperate recordings)?','Dialog box','Yes','No','Yes');
-    end
-    movie_flag = questdlg('Create movie?','Dialog box','Yes','No','Yes');
 elseif nargin ==1
     register_flag = questdlg('Perform X-Y registration (movement correction)?','Dialog box','Yes','No','Yes');
     if iscell(filelist)
@@ -158,7 +154,6 @@ for i = 1:lengthList
     disp('Calculating activity map...')
     
     for j = 1:num_blocks
-        subroutine_progressbar(j/num_blocks);
         idx_vec = (j-1)*block_size+1:min(j*block_size,data.numFrames);
         curr_block_size = length(idx_vec);
         tc = zeros(data.yPixels,data.xPixels,curr_block_size, 'single');
@@ -186,9 +181,6 @@ for i = 1:lengthList
         k_xy = k_xy+k_image*curr_block_size;
     end
     
-    subroutine_progressbar(1);
-    close all
-    
     data.avg_projection = avg_projection/data.numFrames;
     data.frame_F = frame_F;
     reference = data.avg_projection;
@@ -212,169 +204,7 @@ for i = 1:lengthList
     k_xy(isnan(k_xy)) = 0;
     data.activity_map = k_xy;
                                                                               
-%    % where do you want to save it
-%     if ~ispc
-%         waitfor(msgbox('Choose where you want to save the figures'));       % Added by Santi 
-%     end                                                                     % Added by Santi
-%     current_path = pwd;                                                     % Added by Santi
-%     new_path = uigetdir('Choose where you want to save the figures'); 
-                                                               
-                                                                                                                                             
-    %% show movie
-    if strcmp(movie_flag,'Yes')
-        disp('Writing video...')
-        avg_frame = 10;   % number of frames to average for movie
-        down_samp = 10;  % down sample frames (for smaller movie)
-        save_flag = 1;   % save movie                                                   
-        subroutine_moviePlayer(data,avg_frame,down_samp,save_flag)
-    end
-    
-    %% Plot
-    if lengthList==1
-        subplot(1,2,1);
-        imagesc(data.avg_projection)
-        colormap('gray')
-        title('Average Projection')
-        axis square
-        subplot(1,2,2);
-        norm_map = data.activity_map;
-        norm_map = norm_map-min(min(norm_map));
-        norm_map = norm_map/max(max(norm_map));
-        red_activity_map = cat(3,norm_map,zeros(size(norm_map)),zeros(size(norm_map)));
-        image(red_activity_map)
-        title('Activity Map')
-        axis square
-        set(gcf,'Position',[100 100 1600 850])
-        set(gcf,'color',[1 1 1])
-        saveas(gcf,'Activity_map')
-        close
-    end
-    
-    %% save
     save_fn = strcat(data.filename(1:end-4), '_data.mat')
-    % save(strcat(data.filename(1:end-4), '_data', 'data')
-    % eval(['save ' data.filename(1:end-4) '_data data']);
     save(save_fn, 'data');
     clear data
 end
-
-if lengthList > 1 
-    if ~strcmp(nonrigid_flag,'Yes')
-        %% Combine activity maps across multiple files
-        disp('Calculating mean activity map across files')
-        frame_F_allFiles = [];
-        for i = 1:lengthList
-            filename = filelist{i};
-            load([filename(1:end-4) '_data.mat']);
-            if i==1
-                mean_activity_map = zeros(data.yPixels,data.xPixels);
-                mean_avg_projection = zeros(data.yPixels,data.xPixels);
-            end
-            mean_activity_map = mean_activity_map+data.activity_map;
-            mean_avg_projection = mean_avg_projection+data.avg_projection;
-            frame_F_allFiles = [frame_F_allFiles data.frame_F];
-            clear data
-        end
-        mean_activity_map = mean_activity_map/lengthList;
-        mean_avg_projection = mean_avg_projection/lengthList;
-        for i = 1:lengthList
-            filename = filelist{i};
-            load([filename(1:end-4) '_data.mat']);
-
-
-            data.activity_map = mean_activity_map;
-            data.avg_projection = mean_avg_projection;
-            save([filename(1:end-4) '_data.mat'],'data')
-        end
-    elseif strcmp(nonrigid_flag,'Yes')
-        %%initialize master file data
-        filename = filelist{1};
-        load([filename(1:end-4) '_data.mat']);
-
-        data.warp.vx = zeros(data.yPixels, data.xPixels);
-        data.warp.vy = zeros(data.yPixels, data.xPixels);
-        data.warp.a1 = [];
-        data.warp.a2 = [];
-        data.warp.xCrop = 1:data.xPixels;
-        data.warp.yCrop = 1:data.yPixels;
-        save([data.filename(1:end-4) '_data.mat'],'data')
-
-        target = data.avg_projection;
-        new_avg_proj = data.avg_projection;
-        new_activity_map = data.activity_map;
-        all_activity_map = data.activity_map;
-        totalCropX = data.warp.xCrop;
-        totalCropY = data.warp.yCrop;
-        frame_F_allFiles = [];
-
-        %first loop to compute warps + crops + averages
-        for i = 2:length(filelist)
-            filename = filelist{i};
-            load([filename(1:end-4) '_data.mat']);
-            [warp, ~, recon] = subroutine_manualAnchorPoints(mat2gray(target), mat2gray(data.avg_projection));
-
-            totalCropX = intersect(totalCropX, warp.xCrop);
-            totalCropY = intersect(totalCropY, warp.yCrop);
-
-            new_avg_proj = new_avg_proj + recon;
-
-            am_warped = subroutine_vectorWarp(data.activity_map,warp.vx, warp.vy,0);
-            new_activity_map = new_activity_map + am_warped;
-            all_activity_map(:,:,i) = am_warped;
-
-            frame_F_allFiles = [frame_F_allFiles data.frame_F];
-
-            data.warp = warp;
-            save([data.filename(1:end-4) '_data.mat'],'data')
-        end
-
-        %second loop to execute warps
-        for i = 1:length(filelist)
-            filename = filelist{i};
-            load([filename(1:end-4) '_data.mat']);
-            data.warp.xCrop = totalCropX;
-            data.warp.yCrop = totalCropY; 
-            data.filename = subroutine_nonrigidRegisterStack(data);
-            data.avg_projection = new_avg_proj(totalCropY, totalCropX)/length(filelist);
-            data.avg_projection(isnan(data.avg_projection)) = mean(mean(data.avg_projection, 'omitnan')); %Just in case the crop missed something
-            data.activity_map = new_activity_map(totalCropY, totalCropX)/length(filelist);
-            data.activity_map(isnan(data.activity_map)) = mean(mean(data.activity_map, 'omitnan'));
-            data.all_activity_map = all_activity_map(totalCropY, totalCropX,i);
-            data.all_activity_map(isnan(data.all_activity_map)) = mean(mean(data.all_activity_map, 'omitnan'));
-            data.xPixels = size(data.avg_projection,2);
-            data.yPixels = size(data.avg_projection,1);
-            save([data.filename(1:end-4) '_data.mat'],'data')
-        end
-    end
-    %% Plot fluorescence time course
-    plot(frame_F_allFiles,'linewidth',2)
-    F_fit = polyfit([1:length(frame_F_allFiles)],frame_F_allFiles,1);
-    PhotoBl = round((F_fit(1)*length(frame_F_allFiles))/F_fit(2)*100);
-    ylim([0 max(frame_F_allFiles)*1.25])
-    title(['Fluorescence timecourse, Photobleaching = ' num2str(PhotoBl) '%'])
-    xlabel('Frame #')
-    ylabel('Raw fluorescence')
-    set(gcf,'color',[1 1 1])
-    saveas(gcf,'Fluorescence_timecourse')
-    close
-
-    %% Plot
-    subplot(1,2,1);
-    imagesc(data.avg_projection)
-    colormap('gray')
-    title('Average Projection')
-    axis square
-    subplot(1,2,2);
-    norm_map = data.activity_map;
-    norm_map = norm_map-min(min(norm_map));
-    norm_map = norm_map/max(max(norm_map));
-    red_activity_map = cat(3,norm_map,zeros(size(norm_map)),zeros(size(norm_map)));
-    image(red_activity_map)
-    title('Activity Map')
-    axis square
-    set(gcf,'Position',[100 100 1600 850])
-    set(gcf,'color',[1 1 1])
-    saveas(gcf,'Activity_map')
-    close       
-end
-
