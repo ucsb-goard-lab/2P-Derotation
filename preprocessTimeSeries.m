@@ -1,4 +1,4 @@
-function [save_fn] = preprocessTimeSeries(filelist,template)
+function [save_fn] = preprocessTimeSeries(filelist,template,register_flag,nonrigid_flag,)
 % Modified version of A_ProcessTimeSeries, see original description below:
 % Written 13Sep2021 KS
 %
@@ -28,9 +28,6 @@ function [save_fn] = preprocessTimeSeries(filelist,template)
 %
 % Code written by Michael Goard - updated: Oct 2016
 % Nonrigid registration added by James Roney - June 2017
-
-%% Set paths
-addpath(genpath('./subroutine'))
 
 %% Load files
 if nargin==0
@@ -125,7 +122,7 @@ for i = 1:lengthList
 	reference = template; 
         overwrite = 1;
         maxOffset = 100;
-        [new_filename] = subroutine_registerStack_modified(data,reference,0,maxOffset,1);
+        [new_filename] = registerStack(data,reference,0,maxOffset,1);
         data.filename = new_filename;
         if strcmp(nonrigid_flag,'Yes')
             data.filename = [data.filename(1:end-4) '_warped.tif'];
@@ -207,4 +204,131 @@ for i = 1:lengthList
     save_fn = strcat(data.filename(1:end-4), '_data.mat')
     save(save_fn, 'data');
     clear data
+end
+
+function [new_filename] = registerStack(data,reference,overwrite,maxOffset,use_fft)
+
+%% subroutine_registerStack.m
+%
+% Register a stack to the average projection using Matlab imaging processing
+% toolbox.
+%
+% Note: If offset is greater than value of 'maxOffset' value, then the
+%       previous frame will be used (to prevent large fluorescence
+%       artifacts), and an error message will be posted.
+%       If there are many missed frames, the data may be of poor
+%       quality or have excessive movement
+%
+% Called by A_ProcessTimeSeries.m
+%
+% Code written by Michael Goard - updated: Oct 2016
+
+%% Default parameters
+if nargin==4
+    use_fft = 1;
+end
+if nargin==3
+maxOffset = 10; % maximum pixel offset (Default = 12 for 16x zoom)
+end
+
+if nargin==1
+    reference = [];
+    overwrite = 0;
+elseif nargin==2
+    overwrite = 0;
+end
+
+%% Load file and image parameters
+filename = data.filename;
+numFrames = data.numFrames;
+xPixels = data.xPixels;
+yPixels = data.yPixels;
+image_matrix = zeros([yPixels xPixels numFrames],'uint16');
+data.offsets = zeros(data.numFrames, 2);
+
+%% Make reference frame
+if isempty(reference)
+    disp('generating target frame...');
+    if numFrames < 1000
+        idx_vec = 1:numFrames;
+    else
+        idx_vec = [1:50];%100:numFrames];
+    end
+    sum_proj = zeros(yPixels, xPixels, length(idx_vec), 'single');
+    for i = 1:length(idx_vec)
+        sum_proj(:,:,i) = single(imread(data.filename,idx_vec(i)));
+    end
+    template = mean(sum_proj,3);
+    close all
+else
+    template = reference;
+end
+ref_frame = zeros(size(template,1)+2*maxOffset,size(template,2)+2*maxOffset);
+ref_frame(1+maxOffset:yPixels+maxOffset,1+maxOffset:xPixels+maxOffset) = template;
+
+is_window = bwmorph(logical(template), 'close');
+r = LargestRectangle(is_window);
+x_edges = r(2:3, 1);
+y_edges = r(3:4, 2);
+
+%% Register
+jump_ct = 0;
+disp('aligning frames...');
+new_filename = [filename(1:end-4) '_registered.tif'];
+for i = 1:numFrames
+    curr_frame = single(imread(filename,i));
+    % Measure 2D xCorr
+
+    if(use_fft)
+        shifts = subroutine_dftregistration(fft2(template(y_edges(1):y_edges(2), x_edges(1):x_edges(2))), fft2(curr_frame(y_edges(1):y_edges(2), x_edges(1):x_edges(2))));
+        corr_offset = -shifts(3:4);
+    else
+        cc = normxcorr2(template(y_edges(1):y_edges(2), x_edges(1):x_edges(2)), curr_frame(y_edges(1):y_edges(2), x_edges(1):x_edges(2)));
+        [~,imax] = max(abs(cc(:)));
+        [ypeak,xpeak] = ind2sub(size(cc),imax(1));
+        corr_offset = [(ypeak-yPixels) (xpeak-xPixels)];
+    end
+    data.offsets(i,:) = corr_offset;
+    % Determine offset and register
+    if sum(abs(corr_offset)<maxOffset==[1 1])==2
+        reg_frame = ref_frame;
+        y_vec = 1+maxOffset-corr_offset(1):yPixels+maxOffset-corr_offset(1);
+        x_vec = 1+maxOffset-corr_offset(2):xPixels+maxOffset-corr_offset(2);
+        reg_frame(y_vec,x_vec) = curr_frame;
+        reg_frame = reg_frame(1+maxOffset:yPixels+maxOffset,1+maxOffset:xPixels+maxOffset);
+        prev_frame = reg_frame;
+    else % If offset is greater than 'maxOffset', use previous frame
+        disp(['Error: Frame ' num2str(i) ' offset greater than ' num2str(maxOffset) ' pixels, no registration performed'])
+        if i>1
+            reg_frame = prev_frame;
+        else
+            reg_frame = curr_frame;
+            prev_frame = reg_frame;
+        end
+        jump_ct = jump_ct + 1;
+    end
+    image_matrix(:,:,i) = uint16(reg_frame);
+    
+    if jump_ct > floor(numFrames / 10)
+	    keyboard
+        error('Too many jumps, terminated registration.')
+    end
+end
+close all
+
+% write to Tif file (tif files >4GB supported)
+disp('Writing to multi-page Tif file...')
+options.big = true;
+subroutine_saveastiff(image_matrix,new_filename,options);  
+
+% delete old file
+if overwrite==1
+    disp('Deleting unregistered Tif file...')
+    try imread(new_filename,numFrames);
+        delete(filename)
+        disp('Conversion complete.')
+    catch disp('Error: new file appears not to have saved properly, unregistered Tif file preserved')
+    end
+else
+    disp('Conversion complete.')
 end
