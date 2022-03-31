@@ -1,53 +1,68 @@
-% Step 0: Set up
-addpath(genpath(pwd)); % Make sure you add the entire folder and subfolders to have all the necessary helper functions
+%% Step 0: Set up
+addpath(genpath('E:\_Code\2P-Derotation')); % Make sure you add the entire folder and subfolders to have all the necessary helper functions
 
-% Step 1: Choose your recordings for head and platform rotations
+%% Step 1: Choose your recordings for head and platform rotations
 [head_fn, head_pn] = uigetfile('*.tif');
 [plat_fn, plat_pn] = uigetfile('*.tif');
 
-heading_recording = strcat(head_pn, head_fn);
-platform_recording = strcat(plat_pn, plat_fn);
+if contains(head_fn, '000001.ome.tif') % not yet run through subroutine_tifConvert
+    cd(head_pn)
+    heading_recording = subroutine_tifConvert(head_fn);
+else
+    heading_recording = strcat(head_pn, head_fn);
+end
 
-% Step 2: Perform standard stuff on the platform recording to generate a
+if contains(plat_fn, '000001.ome.tif')
+    cd(plat_pn)
+    platform_recording = subroutine_tifConvert(plat_fn);
+else
+    platform_recording = strcat(plat_pn, plat_fn);
+end
+
+% correct weird slashes because of stupid windows
+heading_recording(strfind(heading_recording, '\')) = '/';
+platform_recording(strfind(platform_recording, '\')) = '/';
+
+%% Step 2: Perform standard stuff on the platform recording to generate a
 % template.
 
 cd(plat_pn);
-plat_matfile_fn = A_ProcessTimeSeries_SpinnyMod(platform_recording, [], 'Yes', 'No', 'No');
+plat_matfile_fn = preprocessTimeSeries(platform_recording);
 plat_data = importdata(plat_matfile_fn);
 
 platform_recording = plat_data.filename;
 
-% Step 2: Perform rotation correction (derotation) on the head rotation (not necessary for platform rotation)
-sr = SpinnyRegisterer(heading_recording, plat_data.avg_projection);
+%% Step 3: Perform rotation correction (derotation) on the head rotation (not necessary for platform rotation)
+dr = Derotater(heading_recording, plat_data.avg_projection);
 
 supplementary_files = dir(strcat(head_pn, '*_supplementary_files.mat'));
 if isempty(supplementary_files)
     prev = cd(head_pn);
-    sr.dirtyRegister2();
-    sr.cleanRegister();
-    sr.cleanUp();
+    dr.dirtyRegister(); % first pass at registration
+    dr.cleanRegister(); % adding some smoothing and fine grained adjustments
+    dr.cleanUp();
     cd(prev)
 else
-    sr.load(strcat(supplementary_files.folder, '\\', supplementary_files.name))
+    dr.load(strcat(supplementary_files.folder, '\\', supplementary_files.name))
 end
-sr.save();
+dr.save();
 
-% Step 3: Coregister the platform rotation recording to the template from head rotation
+%% Step 4: Coregister the platform rotation recording to the template from head rotation
 temp = imadjust(rescale(plat_data.avg_projection));
 
 % Pad it
 autoregister_flag = false;
 if autoregister_flag
     [optimizer, metric] = imregconfig('multimodal');
-    tform = imregtform(temp, sr.template, 'rigid', optimizer, metric);
-    output_view = affineOutputView(size(sr.template), tform, 'BoundsStyle', 'SameAsInput');
+    tform = imregtform(temp, dr.template, 'rigid', optimizer, metric);
+    output_view = affineOutputView(size(dr.template), tform, 'BoundsStyle', 'SameAsInput');
     
 else
     [optimizer, metric] = imregconfig('multimodal');
-    tform = imregtform(temp, sr.template, 'rigid', optimizer, metric);
-    output_view = affineOutputView(size(sr.template), tform, 'BoundsStyle', 'SameAsInput');
+    tform = imregtform(temp, dr.template, 'rigid', optimizer, metric);
+    output_view = affineOutputView(size(dr.template), tform, 'BoundsStyle', 'SameAsInput');
     
-        registrationEstimator(temp, sr.template);
+        registrationEstimator(temp, dr.template);
     disp('Press any key to continue: ')
     pause
     output_view = movingReg.SpatialRefObj;
@@ -55,7 +70,7 @@ else
 end
 
 out = imwarp(plat_data.avg_projection, tform, 'OutputView', output_view);
-imshowpair(out, sr.template)
+imshowpair(out, dr.template)
 
 [folder, noxt] = fileparts(platform_recording);
 new_fn = strcat(folder, '\', noxt, '_coregistered.tif');
@@ -79,14 +94,14 @@ end
 writer.close();
 clear('writer')
 
-% Step 4: Crop the platform rotation and head direction to the same FOV
+%% Step 5: Crop the platform rotation and head direction to the same FOV
 cd(fileparts(heading_recording))
-head_cropped_fn = cropToCenter(sr.output_filename, sr.occupancy, strcat(fileparts(heading_recording))); 
+head_cropped_fn = cropToCenter(dr.output_filename, dr.occupancy, strcat(fileparts(heading_recording))); 
 
 cd(fileparts(platform_recording))
-plat_cropped_fn = cropToCenter(new_fn, sr.occupancy, strcat(fileparts(platform_recording)));
+plat_cropped_fn = cropToCenter(new_fn, dr.occupancy, strcat(fileparts(platform_recording)));
 
-% Step 5: Pass the recordings through suite2p_coregister.py to get the same 
+%% Step 6: Pass the recordings through suite2p_coregister.py to get the same 
 % probably going to have to open up anaconda prompt to take care of this manually...
 cd(fileparts(platform_recording))
 plat_matfile_fn = A_ProcessTimeSeries_SpinnyMod(plat_cropped_fn, [], 'Yes', 'No', 'No');

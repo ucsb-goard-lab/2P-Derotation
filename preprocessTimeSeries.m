@@ -1,4 +1,4 @@
-function [save_fn] = preprocessTimeSeries(filelist,template,register_flag,nonrigid_flag,)
+function [save_fn] = preprocessTimeSeries(filelist)
 % Modified version of A_ProcessTimeSeries, see original description below:
 % Written 13Sep2021 KS
 %
@@ -29,25 +29,6 @@ function [save_fn] = preprocessTimeSeries(filelist,template,register_flag,nonrig
 % Code written by Michael Goard - updated: Oct 2016
 % Nonrigid registration added by James Roney - June 2017
 
-%% Load files
-if nargin==0
-    filelist = uigetfile('.tif','MultiSelect','on');
-    nonrigid_flag = 'No';
-    register_flag = questdlg('Perform X-Y registration (movement correction)?','Dialog box','Yes','No','Yes');
-elseif nargin ==1
-    register_flag = questdlg('Perform X-Y registration (movement correction)?','Dialog box','Yes','No','Yes');
-    if iscell(filelist)
-        nonrigid_flag = questdlg('Perform Nonrigid Registration (for aligning seperate recordings)?','Dialog box','Yes','No','Yes');
-    end
-    movie_flag = questdlg('Create movie?','Dialog box','Yes','No','Yes');
-end
-
-if(strcmp(nonrigid_flag, 'Yes'))
-    i = listdlg('PromptString', 'Select master recording:','SelectionMode','single','ListString',filelist);
-    master = filelist{i};
-    filelist{i} = filelist{1};
-    filelist{1} = master; %shift master file to be in 1st index
-end
 %% Calculate length of file list
 if iscell(filelist)==0
     lengthList = 1;
@@ -113,25 +94,17 @@ for i = 1:lengthList
     end
     
     %% Perform X-Y Registration (movement correction)
-    if strcmp(register_flag,'Yes')
-        disp('Performing X-Y registration...')
-        % if i==1 || strcmp(nonrigid_flag,'Yes') 
-        %     reference = [];
-        % end
-
-	reference = template; 
-        overwrite = 1;
-        maxOffset = 100;
-        [new_filename] = registerStack(data,reference,0,maxOffset,1);
-        data.filename = new_filename;
-        if strcmp(nonrigid_flag,'Yes')
-            data.filename = [data.filename(1:end-4) '_warped.tif'];
-        end
-        if lengthList==1
-            filelist = data.filename;
-        else
-            filelist{i} = data.filename;
-        end
+    disp('Performing X-Y registration...')
+    
+    reference = [];
+    overwrite = 1;
+    maxOffset = 100;
+    [new_filename] = registerStack(data,reference,0,maxOffset,1);
+    data.filename = new_filename;
+    if lengthList==1
+        filelist = data.filename;
+    else
+        filelist{i} = data.filename;
     end
     
     %% Calculate kurtosis map
@@ -201,7 +174,7 @@ for i = 1:lengthList
     k_xy(isnan(k_xy)) = 0;
     data.activity_map = k_xy;
                                                                               
-    save_fn = strcat(data.filename(1:end-4), '_data.mat')
+    save_fn = strcat(data.filename(1:end-4), '_data.mat');
     save(save_fn, 'data');
     clear data
 end

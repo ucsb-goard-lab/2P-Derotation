@@ -1,4 +1,4 @@
-classdef SpinnyRegisterer < handle
+classdef Derotater < handle
 	properties
 		avg_proj
 		filename
@@ -16,16 +16,16 @@ classdef SpinnyRegisterer < handle
 	end
 
 	methods
-		function obj = SpinnyRegisterer(filename, avg_projection)
+		function obj = Derotater(filename, avg_projection)
 			if nargin < 2 || isempty(avg_projection)
 				if obj.n_images > 2550
-					avg_projection = obj.calculateAvgProjection2();
+					avg_projection = obj.calculateAvgProjection('front');
 				else
-					avg_projeciton = obj.calculateAvgProjection();
+					avg_projeciton = obj.calculateAvgProjection('back');
 				end
 			end
 
-			fprintf('Initializing SpinnyRegisterer...\n')
+			fprintf('Initializing Derotater...\n')
 			obj.filename = filename;
 			obj.avg_proj = avg_projection;
 			obj.getBasicImageInfo();
@@ -307,21 +307,30 @@ classdef SpinnyRegisterer < handle
 			obj.height = image_info(1).Height;
 		end
 
-		function out = calculateAvgProjection2(obj)
-			fprintf('Calculating avg projection (front)...\n')
-			img_mat = zeros(obj.height, obj.width, 50);
-			for im = 1:50
-				img_mat(:, :, im) = imread(obj.filename, im);
-			end
-			out = mean(img_mat, 3);
-		end
-		function out = calculateAvgProjection(obj)
-			fprintf('Calculating average projection...\n')
-			% usually the last 50 are not moving so..
-			checkback = 49;
-			img_mat = zeros(obj.height, obj.width, checkback+1);
-			for im = obj.n_images-checkback:obj.n_images
-				img_mat(:, :, im) = imread(obj.filename, im);
+		% function out = calculateAvgProjection2(obj)
+		% 	fprintf('Calculating avg projection (front)...\n')
+		% 	img_mat = zeros(obj.height, obj.width, 50);
+		% 	for im = 1:50
+		% 		img_mat(:, :, im) = imread(obj.filename, im);
+		% 	end
+		% 	out = mean(img_mat, 3);
+		% end
+		function out = calculateAvgProjection(obj, direction)
+			switch direction
+				case 'front'
+					img_mat = zeros(obj.height, obj.width, 50);
+					for im = 1:50
+						img_mat(:, :, im) = imread(obj.filename, im);
+					end
+					out = mean(img_mat, 3);
+				case 'back'
+					fprintf('Calculating average projection...\n')
+					% usually the last 50 are not moving so..
+					checkback = 49;
+					img_mat = zeros(obj.height, obj.width, checkback+1);
+					for im = obj.n_images-checkback:obj.n_images
+						img_mat(:, :, im) = imread(obj.filename, im);
+					end
 			end
 			out = mean(img_mat, 3);
 		end
@@ -1103,4 +1112,4 @@ classdef SpinnyRegisterer < handle
 			end
 		end
 	end
-
+end
