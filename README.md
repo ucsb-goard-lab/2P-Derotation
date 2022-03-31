@@ -12,3 +12,5 @@ Everything is pretty self contained, so not much else is needed.
 It starts from .TIF timeseries data (either multi-page or many single page tifs), and goes through the entire procedure for 1) derotating rotating timeseries ("head_rotation") and 2) aligning derotated timeseries to a second, non-rotated recording ("platform_rotation").
 
 ## Dependencies
+- Image Processing Toolbox
+- Signal Processing Toolbox
