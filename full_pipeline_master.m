@@ -125,7 +125,9 @@ head_data = importdata(head_matfile_fn);
 
 imshowpair(rescale(plat_data.avg_projection), rescale(head_data.avg_projection), 'montage');
 
-% adjusting the activity maps to get rid of the ring of high activity?
+% Adjusting activity maps
+% This is because the movement of the imaging field within the circle
+% causes a "ring" of really high activity, which we remove here.
 data = importdata(plat_matfile_fn);
 window_mask = logical(data.activity_map);
 data.activity_map(~window_mask) = NaN; % set outside to NaNs;
@@ -135,17 +137,16 @@ data.activity_map(window_mask) = NaN;
 data.activity_map(isnan(data.activity_map)) = min(data.activity_map(:));
 save(plat_matfile_fn, 'data');
 
-% head?
 data = importdata(head_matfile_fn);
 median_val = median(data.activity_map(:));
 std_val = std(data.activity_map(:));
 data.activity_map(data.activity_map > median_val + 5 * std_val) = 0;
 save(head_matfile_fn, 'data');
 
-% Define ROIs based on the platform recording (clearer?)
+% Define ROIs based on the platform recording
 B_DefineROI(plat_matfile_fn)
 
-% transfer ROIs
+% transfer ROIs to the head rotation
 donor = importdata(plat_matfile_fn);
 cd(fileparts(heading_recording))
 load(head_matfile_fn)
