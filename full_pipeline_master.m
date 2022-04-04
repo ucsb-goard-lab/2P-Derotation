@@ -27,7 +27,7 @@ platform_recording(strfind(platform_recording, '\')) = '/';
 % template.
 
 cd(plat_pn);
-plat_matfile_fn = preprocessTimeSeries(platform_recording);
+plat_matfile_fn = processTimeSeries(platform_recording);
 plat_data = importdata(plat_matfile_fn);
 
 platform_recording = plat_data.filename;
@@ -51,18 +51,28 @@ dr.save();
 temp = imadjust(rescale(plat_data.avg_projection));
 
 % Pad it
-autoregister_flag = false;
+autoregister_flag = false; % feel free to try autoregistration, but becaus ethere are few field to register, i usually manually do it
 if autoregister_flag
     [optimizer, metric] = imregconfig('multimodal');
     tform = imregtform(temp, dr.template, 'rigid', optimizer, metric);
     output_view = affineOutputView(size(dr.template), tform, 'BoundsStyle', 'SameAsInput');
     
 else
+    % Recommended starting points:
+    % Change registration type to "Intensity: Multimodal"
+    % Check box for "Normalize"
+    % Change Align Centers to "Center of Mass"
+    % Set Transformation to "Rigid"
+    % Try tweaking initial radius to improve fit
+    
+    % When finished, press "Export", and allow it to export your results
+    % into a variable caleld "movingReg". Then press any key in the command
+    % window to continue.
     [optimizer, metric] = imregconfig('multimodal');
     tform = imregtform(temp, dr.template, 'rigid', optimizer, metric);
     output_view = affineOutputView(size(dr.template), tform, 'BoundsStyle', 'SameAsInput');
     
-        registrationEstimator(temp, dr.template);
+    registrationEstimator(temp, dr.template);
     disp('Press any key to continue: ')
     pause
     output_view = movingReg.SpatialRefObj;
@@ -101,16 +111,14 @@ head_cropped_fn = cropToCenter(dr.output_filename, dr.occupancy, strcat(filepart
 cd(fileparts(platform_recording))
 plat_cropped_fn = cropToCenter(new_fn, dr.occupancy, strcat(fileparts(platform_recording)));
 
-%% Step 6: Pass the recordings through suite2p_coregister.py to get the same 
-% probably going to have to open up anaconda prompt to take care of this manually...
+%% Step 6: Process recordings with A_ProcessTimeSeries
 cd(fileparts(platform_recording))
-plat_matfile_fn = A_ProcessTimeSeries_SpinnyMod(plat_cropped_fn, [], 'Yes', 'No', 'No');
+plat_matfile_fn = processTimeSeries(plat_cropped_fn);
 plat_data = importdata(plat_matfile_fn);
-
 
 % use the platform registered recording to register to head one
 cd(fileparts(heading_recording))
-head_matfile_fn = A_ProcessTimeSeries_SpinnyMod(head_cropped_fn, plat_data.avg_projection, 'Yes', 'No', 'No');
+head_matfile_fn = processTimeSeries(head_cropped_fn, plat_data.avg_projection);
 
 % check here for good alignment
 head_data = importdata(head_matfile_fn);

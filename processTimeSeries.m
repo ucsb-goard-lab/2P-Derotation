@@ -1,4 +1,4 @@
-function [save_fn] = preprocessTimeSeries(filelist)
+function [save_fn] = processTimeSeries(filelist, reference)
 % Modified version of A_ProcessTimeSeries, see original description below:
 % Written 13Sep2021 KS
 %
@@ -29,6 +29,9 @@ function [save_fn] = preprocessTimeSeries(filelist)
 % Code written by Michael Goard - updated: Oct 2016
 % Nonrigid registration added by James Roney - June 2017
 
+if nargin < 2 || isempty(reference)
+	reference = []; % 
+end
 %% Calculate length of file list
 if iscell(filelist)==0
     lengthList = 1;
@@ -96,7 +99,6 @@ for i = 1:lengthList
     %% Perform X-Y Registration (movement correction)
     disp('Performing X-Y registration...')
     
-    reference = [];
     overwrite = 1;
     maxOffset = 100;
     [new_filename] = registerStack(data,reference,0,maxOffset,1);
